@@ -1,0 +1,4 @@
+// NHS.UK frontend: core (settings, typography, layout, utilities) + all components.
+// Assets resolve to /assets/ (see scripts/copy-nhs-assets.mjs) and the
+// Frutiger web font loads from https://assets.nhs.uk/fonts/ by default.
+@use "nhsuk-frontend";

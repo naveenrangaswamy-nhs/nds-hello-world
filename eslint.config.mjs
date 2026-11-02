@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated: NHS.UK frontend files copied by scripts/copy-nhs-assets.mjs.
+    "public/assets/**",
+    // Generated: OpenNext build output.
+    ".open-next/**",
   ]),
 ]);
 

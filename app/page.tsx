@@ -1,69 +1,75 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+const renderedAtFormatter = new Intl.DateTimeFormat("en-GB", {
+  dateStyle: "long",
+  timeStyle: "medium",
+  timeZone: "Europe/London",
+});
 
 export default function Home() {
+  const renderedAt = new Date();
+
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>
-            To get started, edit the{" "}
-            <code className={styles.code}>page.tsx</code> file.
-          </h1>
+    <div className="nhsuk-grid-row">
+      <div className="nhsuk-grid-column-two-thirds">
+        <span className="nhsuk-caption-xl">Next.js and the NHS design system</span>
+        <h1 className="nhsuk-heading-xl">Hello world</h1>
+
+        <p className="nhsuk-body-l">
+          This page is styled with NHS.UK frontend, the code behind the NHS design system.
+          It uses the NHS header, footer, typography, colours, spacing and layout grid.
+        </p>
+
+        <div className="nhsuk-inset-text">
+          <span className="nhsuk-u-visually-hidden">Information: </span>
           <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
+            Edit <code>app/page.tsx</code> to change this page. Styles come from{" "}
+            <code>app/globals.scss</code>, which imports the design system.
           </p>
         </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        <h2 className="nhsuk-heading-l" id="about">
+          About this app
+        </h2>
+        <p>The application is set up with:</p>
+        <ul className="nhsuk-list nhsuk-list--bullet">
+          <li>Next.js App Router with TypeScript</li>
+          <li>NHS.UK frontend SCSS compiled through Sass</li>
+          <li>NHS.UK frontend JavaScript initialised on the client</li>
+          <li>NHS favicons, app icons and web manifest served from /assets</li>
+          <li>A skip link, landmark roles and the NHS page title format</li>
+        </ul>
+
+        <div className="nhsuk-card">
+          <div className="nhsuk-card__content">
+            <h3 className="nhsuk-card__heading nhsuk-heading-m">
+              <a
+                className="nhsuk-card__link"
+                href="https://service-manual.nhs.uk/design-system/components"
+              >
+                Browse the components
+              </a>
+            </h3>
+            <p className="nhsuk-card__description">
+              See every component in the NHS design system, with guidance on when and how to use
+              each one.
+            </p>
+          </div>
         </div>
-      </main>
+
+        <p className="nhsuk-body-s nhsuk-u-secondary-text-color">
+          This page was rendered on the server at{" "}
+          <time dateTime={renderedAt.toISOString()}>{renderedAtFormatter.format(renderedAt)}</time>.
+          Refresh to see it change.
+        </p>
+
+        <a
+          className="nhsuk-button"
+          draggable="false"
+          href="https://service-manual.nhs.uk/design-system"
+          role="button"
+        >
+          Read the design system
+        </a>
+      </div>
     </div>
   );
 }
