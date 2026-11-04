@@ -78,6 +78,20 @@ resource "aws_cloudwatch_log_metric_filter" "render_time" {
   }
 }
 
+resource "aws_cloudwatch_log_metric_filter" "client_errors" {
+  name           = "client-errors"
+  log_group_name = local.log_group
+  pattern        = "{ $.event = \"client.event\" && $.clientEvent = \"client.error\" }"
+
+  metric_transformation {
+    name          = "ClientErrors"
+    namespace     = local.metric_namespace
+    value         = "1"
+    default_value = "0"
+    unit          = "Count"
+  }
+}
+
 # ----------------------------------------------------------------- alarms
 
 resource "aws_sns_topic" "alarms" {
@@ -155,6 +169,12 @@ resource "aws_cloudwatch_metric_alarm" "app_errors" {
 
   depends_on = [aws_cloudwatch_log_metric_filter.app_errors]
 }
+
+# There is deliberately no CloudFront 5xx alarm. CloudFront publishes metrics
+# only in us-east-1, and an org policy denies creating alarms (and SNS topics)
+# there. The dashboard graphs the 5xx rate instead, and the Lambda alarms above
+# cover failures behind the edge. A Synthetics canary in Sydney, or an org
+# exception for CloudWatch alarms and SNS in us-east-1, would close the gap.
 
 # -------------------------------------------------------------- dashboard
 
@@ -254,6 +274,42 @@ resource "aws_cloudwatch_dashboard" "main" {
           query  = "SOURCE '${local.log_group}' | fields @timestamp, level, event, path, requestId, error.message | filter level in [\"error\", \"fatal\", \"warn\"] | sort @timestamp desc | limit 50"
         }
       },
+      {
+        type = "metric", x = 0, y = 20, width = 8, height = 6
+        properties = {
+          title  = "CloudFront 5xx rate (%)"
+          region = "us-east-1"
+          view   = "timeSeries"
+          stat   = "Average"
+          period = 300
+          metrics = [
+            ["AWS/CloudFront", "5xxErrorRate", "DistributionId", aws_cloudfront_distribution.main.id, "Region", "Global"],
+            ["AWS/CloudFront", "4xxErrorRate", "DistributionId", aws_cloudfront_distribution.main.id, "Region", "Global"],
+          ]
+        }
+      },
+      {
+        type = "metric", x = 8, y = 20, width = 8, height = 6
+        properties = {
+          title  = "Browser errors (beacon)"
+          region = var.aws_region
+          view   = "timeSeries"
+          stat   = "Sum"
+          period = 300
+          metrics = [
+            [local.metric_namespace, "ClientErrors"],
+          ]
+        }
+      },
+      {
+        type = "log", x = 16, y = 20, width = 8, height = 6
+        properties = {
+          title  = "Page timings from browsers (ms)"
+          region = var.aws_region
+          view   = "table"
+          query  = "SOURCE '${local.log_group}' | filter event = \"client.event\" and clientEvent = \"page.timing\" | stats count(*) as views, pct(ttfbMs, 75) as ttfb_p75, pct(lcpMs, 75) as lcp_p75 by pagePath | sort views desc"
+        }
+      },
     ]
   })
 }
@@ -300,5 +356,49 @@ resource "aws_cloudwatch_query_definition" "traffic_by_path" {
     filter event = "http.request"
     | stats count(*) as requests by path, bin(1h)
     | sort requests desc
+  EOT
+}
+
+resource "aws_cloudwatch_query_definition" "funnel" {
+  name            = "${var.project}/${var.environment}/funnel"
+  log_group_names = [local.log_group]
+  query_string    = <<-EOT
+    # Journeys reaching each step of each funnel (lib/funnels.ts).
+    filter event = "journey.step"
+    | stats count_distinct(journeyId) as journeys by funnel, stepIndex, step
+    | sort funnel, stepIndex
+  EOT
+}
+
+resource "aws_cloudwatch_query_definition" "client_errors" {
+  name            = "${var.project}/${var.environment}/browser-errors"
+  log_group_names = [local.log_group]
+  query_string    = <<-EOT
+    filter event = "client.event" and clientEvent = "client.error"
+    | stats count(*) as errors by message, source, pagePath
+    | sort errors desc
+    | limit 50
+  EOT
+}
+
+resource "aws_cloudwatch_query_definition" "page_timing" {
+  name            = "${var.project}/${var.environment}/page-timing"
+  log_group_names = [local.log_group]
+  query_string    = <<-EOT
+    filter event = "client.event" and clientEvent = "page.timing"
+    | stats count(*) as views, pct(ttfbMs, 75) as ttfb_p75, pct(lcpMs, 75) as lcp_p75, pct(loadMs, 75) as load_p75 by pagePath
+    | sort views desc
+  EOT
+}
+
+resource "aws_cloudwatch_query_definition" "audit" {
+  name            = "${var.project}/${var.environment}/audit-events"
+  log_group_names = [local.log_group]
+  query_string    = <<-EOT
+    # The last 30 days only; older records are in the audit S3 bucket.
+    filter log_type = "audit"
+    | fields @timestamp, action, outcome, userRef, target, reason, requestId
+    | sort @timestamp desc
+    | limit 100
   EOT
 }

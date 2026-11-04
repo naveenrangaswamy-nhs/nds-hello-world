@@ -35,6 +35,45 @@ resource "aws_cloudfront_function" "forward_host" {
   JS
 }
 
+# Security headers on every response, static or dynamic. A
+# Content-Security-Policy is not set yet: the layout's inline scripts would
+# need hashes first.
+resource "aws_cloudfront_response_headers_policy" "security" {
+  name    = "${local.name}-security-headers"
+  comment = "HSTS, nosniff, frame denial, referrer and permissions policy"
+
+  security_headers_config {
+    strict_transport_security {
+      access_control_max_age_sec = 31536000
+      include_subdomains         = true
+      preload                    = false
+      override                   = true
+    }
+
+    content_type_options {
+      override = true
+    }
+
+    frame_options {
+      frame_option = "DENY"
+      override     = true
+    }
+
+    referrer_policy {
+      referrer_policy = "strict-origin-when-cross-origin"
+      override        = true
+    }
+  }
+
+  custom_headers_config {
+    items {
+      header   = "Permissions-Policy"
+      value    = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+      override = true
+    }
+  }
+}
+
 resource "aws_cloudfront_distribution" "main" {
   enabled         = true
   comment         = local.name
@@ -55,10 +94,11 @@ resource "aws_cloudfront_distribution" "main" {
     origin_id   = "server"
     domain_name = trimsuffix(trimprefix(aws_lambda_function_url.server.function_url, "https://"), "/")
 
-    # Overwrites any value a viewer sends. Checked by the app's proxy.
+    # Overwrites any value a viewer sends. Checked by the app's proxy. The
+    # rotation Lambda (infra/secrets.tf) changes it in place every rotation.
     custom_header {
-      name  = "x-origin-verify"
-      value = random_password.origin_verify.result
+      name  = local.origin_header
+      value = data.aws_secretsmanager_secret_version.origin_verify.secret_string
     }
 
     custom_origin_config {
@@ -71,13 +111,14 @@ resource "aws_cloudfront_distribution" "main" {
 
   # Everything dynamic goes to the Lambda and is never cached.
   default_cache_behavior {
-    target_origin_id         = "server"
-    viewer_protocol_policy   = "redirect-to-https"
-    allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
-    cached_methods           = ["GET", "HEAD"]
-    compress                 = true
-    cache_policy_id          = data.aws_cloudfront_cache_policy.disabled.id
-    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    target_origin_id           = "server"
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+    cached_methods             = ["GET", "HEAD"]
+    compress                   = true
+    cache_policy_id            = data.aws_cloudfront_cache_policy.disabled.id
+    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
 
     function_association {
       event_type   = "viewer-request"
@@ -87,23 +128,25 @@ resource "aws_cloudfront_distribution" "main" {
 
   # Hashed build output and the NHS.UK frontend files are served from S3.
   ordered_cache_behavior {
-    path_pattern           = "/_next/*"
-    target_origin_id       = "assets"
-    viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["GET", "HEAD"]
-    cached_methods         = ["GET", "HEAD"]
-    compress               = true
-    cache_policy_id        = data.aws_cloudfront_cache_policy.optimized.id
+    path_pattern               = "/_next/*"
+    target_origin_id           = "assets"
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD"]
+    cached_methods             = ["GET", "HEAD"]
+    compress                   = true
+    cache_policy_id            = data.aws_cloudfront_cache_policy.optimized.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
   }
 
   ordered_cache_behavior {
-    path_pattern           = "/assets/*"
-    target_origin_id       = "assets"
-    viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["GET", "HEAD"]
-    cached_methods         = ["GET", "HEAD"]
-    compress               = true
-    cache_policy_id        = data.aws_cloudfront_cache_policy.optimized.id
+    path_pattern               = "/assets/*"
+    target_origin_id           = "assets"
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD"]
+    cached_methods             = ["GET", "HEAD"]
+    compress                   = true
+    cache_policy_id            = data.aws_cloudfront_cache_policy.optimized.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
   }
 
   restrictions {

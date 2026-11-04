@@ -1,3 +1,5 @@
+import { ROTATION_STAGES, secrets, type SecretStore } from "./secrets";
+
 /**
  * Proves a request came through CloudFront.
  *
@@ -7,21 +9,39 @@
  * (see infra/cloudfront.tf), overwriting any value a client sends, and the
  * proxy rejects requests without it. That keeps WAF and the CDN in front of
  * every page.
+ *
+ * The secret rotates in Secrets Manager (infra/secrets.tf). While CloudFront
+ * edges switch over, some send the new value and some the old, so the
+ * current, pending and previous values are all accepted.
  */
 
 export const ORIGIN_VERIFY_HEADER = "x-origin-verify";
 
 /**
- * True when the header matches the configured secret, or when no secret is
- * configured (local development, tests).
+ * True when the header matches one of the accepted secrets, or when no
+ * secret is configured (local development, tests).
  */
-export function isFromTrustedOrigin(
-  value: string | null,
-  secret: string | undefined = process.env.ORIGIN_VERIFY_SECRET,
-): boolean {
-  if (!secret) return true;
+export function isFromTrustedOrigin(value: string | null, accepted: readonly string[]): boolean {
+  if (accepted.length === 0) return true;
   if (!value) return false;
-  return constantTimeEqual(value, secret);
+  // Check every candidate so the time taken does not reveal which one matched.
+  let match = false;
+  for (const secret of accepted) match = constantTimeEqual(value, secret) || match;
+  return match;
+}
+
+/**
+ * Checks a request's origin header against the secret in Secrets Manager.
+ * An unknown value triggers one throttled re-read, in case a rotation has
+ * just started and the cached values are stale.
+ */
+export async function verifyOrigin(value: string | null, store: SecretStore = secrets): Promise<boolean> {
+  const name = "ORIGIN_VERIFY_SECRET";
+  const accepted = await store.values(name, { stages: ROTATION_STAGES });
+  if (isFromTrustedOrigin(value, accepted)) return true;
+  if (!value) return false;
+  const fresh = await store.values(name, { stages: ROTATION_STAGES, refresh: true });
+  return isFromTrustedOrigin(value, fresh);
 }
 
 /** String comparison whose timing does not reveal how many leading characters match. */

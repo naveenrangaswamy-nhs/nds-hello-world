@@ -3,20 +3,16 @@ locals {
 
   # `npm run build:lambda` writes the server function here.
   server_dir = "${path.module}/../.open-next/server-functions/default"
+
+  # Every role this stack creates must carry the boundary made by
+  # infra/bootstrap; the deploy role cannot create or change roles without it.
+  permissions_boundary = "arn:aws:iam::${var.aws_account_id}:policy/${local.name}-boundary"
 }
 
 data "archive_file" "server" {
   type        = "zip"
   source_dir  = local.server_dir
   output_path = "${path.module}/.build/server.zip"
-}
-
-# Shared secret CloudFront sends to the origin; the app rejects requests
-# without it (lib/origin-verify.ts). Kept in Terraform state, which lives in
-# the encrypted, private state bucket.
-resource "random_password" "origin_verify" {
-  length  = 48
-  special = false
 }
 
 resource "aws_cloudwatch_log_group" "server" {
@@ -36,14 +32,24 @@ data "aws_iam_policy_document" "lambda_assume" {
 }
 
 resource "aws_iam_role" "server" {
-  name               = "${local.name}-server"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+  name                 = "${local.name}-server"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume.json
+  permissions_boundary = local.permissions_boundary
 }
 
 data "aws_iam_policy_document" "server_logs" {
   statement {
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
     resources = ["${aws_cloudwatch_log_group.server.arn}:*"]
+  }
+
+  # lib/secrets.ts reads these at runtime.
+  statement {
+    actions = ["secretsmanager:GetSecretValue"]
+    resources = concat(
+      [aws_secretsmanager_secret.origin_verify.arn],
+      [for s in aws_secretsmanager_secret.hmac : s.arn],
+    )
   }
 }
 
@@ -100,14 +106,21 @@ resource "aws_lambda_function" "server" {
       APP_VERSION  = var.app_version
       LOG_LEVEL    = var.log_level
 
-      ORIGIN_VERIFY_SECRET = random_password.origin_verify.result
+      ORIGIN_VERIFY_SECRET_SECRET_ARN = aws_secretsmanager_secret.origin_verify.arn
+      JOURNEY_HMAC_KEY_SECRET_ARN     = aws_secretsmanager_secret.hmac["journey-hmac-key"].arn
+      USER_REF_HMAC_KEY_SECRET_ARN    = aws_secretsmanager_secret.hmac["user-ref-hmac-key"].arn
       }, var.adot_layer_arn == null ? {} : {
       AWS_LAMBDA_EXEC_WRAPPER = "/opt/otel-instrument"
       OTEL_SERVICE_NAME       = "nhs-helloworld"
     })
   }
 
-  depends_on = [aws_iam_role_policy.server_logs]
+  # New code reads the secrets at start-up and refuses requests without them.
+  depends_on = [
+    aws_iam_role_policy.server_logs,
+    aws_secretsmanager_secret_version.origin_verify,
+    aws_secretsmanager_secret_version.hmac,
+  ]
 }
 
 # CloudFront reaches the function through this URL. It is public at the

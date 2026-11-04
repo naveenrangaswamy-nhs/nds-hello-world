@@ -44,3 +44,11 @@ output "dns_records" {
     }
   }
 }
+
+output "audit_bucket" {
+  value = aws_s3_bucket.audit.bucket
+}
+
+output "origin_secret_arn" {
+  value = aws_secretsmanager_secret.origin_verify.arn
+}

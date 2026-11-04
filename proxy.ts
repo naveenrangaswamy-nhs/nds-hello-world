@@ -1,8 +1,8 @@
 import { context, propagation } from "@opentelemetry/api";
 import { NextResponse, type NextRequest } from "next/server";
 import { safeRequestId, truncateIp, uaFamily, xrayTraceId } from "@/lib/anonymise";
-import { logger } from "@/lib/logger";
-import { isFromTrustedOrigin, ORIGIN_VERIFY_HEADER } from "@/lib/origin-verify";
+import { errorFields, logger } from "@/lib/logger";
+import { ORIGIN_VERIFY_HEADER, verifyOrigin } from "@/lib/origin-verify";
 import { fromXrayTraceId, getTraceContext } from "@/lib/telemetry";
 import {
   REQUEST_ID_HEADER,
@@ -24,14 +24,14 @@ import {
  * - Writes one `http.request` line with anonymised client details.
  * - Rejects requests that did not come through CloudFront (lib/origin-verify.ts).
  */
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const requestId = safeRequestId(request.headers.get(REQUEST_ID_HEADER)) ?? crypto.randomUUID();
   const inboundXray = xrayTraceId(request.headers.get(XRAY_TRACE_HEADER));
   const active = getTraceContext();
   const traceId = active.traceId ?? fromXrayTraceId(inboundXray);
   const { pathname } = request.nextUrl;
 
-  if (!isFromTrustedOrigin(request.headers.get(ORIGIN_VERIFY_HEADER))) {
+  if (!(await originAllowed(request.headers.get(ORIGIN_VERIFY_HEADER)))) {
     logger.warn({
       event: "origin.rejected",
       requestId,
@@ -72,6 +72,16 @@ export function proxy(request: NextRequest) {
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set(REQUEST_ID_HEADER, requestId);
   return response;
+}
+
+/** Fails closed: if the secret cannot be read, the request is refused and the error logged. */
+async function originAllowed(value: string | null): Promise<boolean> {
+  try {
+    return await verifyOrigin(value);
+  } catch (err) {
+    logger.error({ event: "secrets.error", secret: "ORIGIN_VERIFY_SECRET", ...errorFields(err) });
+    return false;
+  }
 }
 
 const headersSetter = {
