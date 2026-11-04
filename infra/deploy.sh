@@ -1,20 +1,28 @@
 #!/usr/bin/env bash
 # Build the app for Lambda, apply the infrastructure, then publish static files.
 #
-#   AWS_PROFILE=default ./infra/deploy.sh
+#   ./infra/deploy.sh
 #
-# Terraform asks for confirmation before it changes anything.
+# On a workstation it uses the helloworld-deployer profile, which assumes the
+# scoped deploy role (infra/bootstrap/deployer.tf), and Terraform asks for
+# confirmation before it changes anything. In CI (CI=true) it uses the
+# credentials already in the environment and applies without asking.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-export AWS_PROFILE="${AWS_PROFILE:-default}"
+if [[ "${CI:-}" == "true" ]]; then
+  apply_args=(-auto-approve -input=false)
+else
+  export AWS_PROFILE="${AWS_PROFILE:-helloworld-deployer}"
+  apply_args=()
+fi
 export TF_VAR_app_version="${TF_VAR_app_version:-$(git rev-parse --short HEAD 2>/dev/null || echo dev)}"
 
 npm run build:lambda
 
 terraform -chdir=infra init -input=false
-terraform -chdir=infra apply
+terraform -chdir=infra apply ${apply_args[@]+"${apply_args[@]}"}
 
 bucket=$(terraform -chdir=infra output -raw assets_bucket)
 distribution=$(terraform -chdir=infra output -raw distribution_id)

@@ -15,6 +15,7 @@
     "lambda:smoke": "node scripts/lambda-smoke.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.1161.0",
     "@opentelemetry/api": "^1.10.0",
     "@opentelemetry/context-async-hooks": "^3.0.0",
     "@opentelemetry/core": "^3.0.0",

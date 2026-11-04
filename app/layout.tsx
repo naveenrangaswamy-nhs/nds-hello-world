@@ -2,7 +2,10 @@ import type { Metadata, Viewport } from "next";
 import Footer from "@/components/Footer";
 import Header from "@/components/Header";
 import SkipLink from "@/components/SkipLink";
+import { beaconScript } from "@/lib/beacon-script";
+import { recordJourneyStep } from "@/lib/journey";
 import { elapsedMs, getRequestContext, getRequestLogger } from "@/lib/request-context";
+import { getSessionId } from "@/lib/session";
 import "./globals.scss";
 
 // Render every route on the server at request time (no static prerendering,
@@ -56,6 +59,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // Time from the proxy seeing the request to the page tree starting to render.
   // Full response timing comes from the trace (step 2) and CloudFront logs.
   log.info({ event: "page.render", elapsedMs: elapsedMs(ctx) });
+  // Signed-in pages that are funnel steps log journey.step; nothing before sign-in.
+  await recordJourneyStep(log, { sessionId: await getSessionId(), path: ctx.path });
 
   return (
     <html lang="en">
@@ -109,6 +114,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {/* eslint-disable-next-line @next/next/no-sync-scripts */}
         <script type="module" src={NHS_FRONTEND_JS} />
         <script type="module" dangerouslySetInnerHTML={{ __html: initNhsFrontendScript }} />
+        {/* Page timings and script errors to POST /api/events (lib/beacon-script.ts). */}
+        <script dangerouslySetInnerHTML={{ __html: beaconScript }} />
       </body>
     </html>
   );

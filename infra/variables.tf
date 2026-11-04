@@ -79,3 +79,26 @@ variable "waf_rate_limit" {
   type        = number
   default     = 1000
 }
+
+variable "origin_secret_rotation_days" {
+  description = "How often Secrets Manager rotates the CloudFront origin secret."
+  type        = number
+  default     = 30
+}
+
+variable "audit_retention_days" {
+  description = "How long each audit record is locked in S3 before it can be deleted."
+  type        = number
+  default     = 365
+}
+
+variable "audit_lock_mode" {
+  description = "S3 Object Lock mode for audit records: GOVERNANCE (dev) or COMPLIANCE (cannot be bypassed, even by root)."
+  type        = string
+  default     = "GOVERNANCE"
+
+  validation {
+    condition     = contains(["GOVERNANCE", "COMPLIANCE"], var.audit_lock_mode)
+    error_message = "audit_lock_mode must be GOVERNANCE or COMPLIANCE."
+  }
+}
