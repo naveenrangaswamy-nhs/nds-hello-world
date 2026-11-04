@@ -2,6 +2,7 @@ import { context, propagation } from "@opentelemetry/api";
 import { NextResponse, type NextRequest } from "next/server";
 import { safeRequestId, truncateIp, uaFamily, xrayTraceId } from "@/lib/anonymise";
 import { logger } from "@/lib/logger";
+import { isFromTrustedOrigin, ORIGIN_VERIFY_HEADER } from "@/lib/origin-verify";
 import { fromXrayTraceId, getTraceContext } from "@/lib/telemetry";
 import {
   REQUEST_ID_HEADER,
@@ -21,6 +22,7 @@ import {
  * - Records the request start time and path so the layout can log how long
  *   the render took.
  * - Writes one `http.request` line with anonymised client details.
+ * - Rejects requests that did not come through CloudFront (lib/origin-verify.ts).
  */
 export function proxy(request: NextRequest) {
   const requestId = safeRequestId(request.headers.get(REQUEST_ID_HEADER)) ?? crypto.randomUUID();
@@ -29,7 +31,21 @@ export function proxy(request: NextRequest) {
   const traceId = active.traceId ?? fromXrayTraceId(inboundXray);
   const { pathname } = request.nextUrl;
 
+  if (!isFromTrustedOrigin(request.headers.get(ORIGIN_VERIFY_HEADER))) {
+    logger.warn({
+      event: "origin.rejected",
+      requestId,
+      traceId,
+      method: request.method,
+      path: pathname,
+      ipPrefix: truncateIp(request.headers.get("x-forwarded-for")),
+    });
+    return new NextResponse("Forbidden", { status: 403 });
+  }
+
   const requestHeaders = new Headers(request.headers);
+  // The secret has done its job; keep it out of the render and route handlers.
+  requestHeaders.delete(ORIGIN_VERIFY_HEADER);
   requestHeaders.set(REQUEST_ID_HEADER, requestId);
   requestHeaders.set(REQUEST_START_HEADER, String(Date.now()));
   requestHeaders.set(REQUEST_PATH_HEADER, pathname);

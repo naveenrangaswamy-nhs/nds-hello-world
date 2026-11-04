@@ -48,3 +48,9 @@ next-env.d.ts
 
 # OpenNext build output
 /.open-next
+
+# Terraform
+/infra/**/.terraform/
+/infra/**/*.tfstate
+/infra/**/*.tfstate.*
+/infra/.build/

@@ -38,7 +38,7 @@ import {
  * global:
  *
  * - "layer"   AWS Lambda with the ADOT Node.js layer and
- *             `AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler`. The layer registers
+ *             `AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-instrument`. The layer registers
  *             the provider before the app loads, owns X-Ray propagation and
  *             export, and force-flushes at the end of every invocation. We
  *             register nothing; Next's spans and ours flow to it.
